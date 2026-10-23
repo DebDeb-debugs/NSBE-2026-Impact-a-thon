@@ -1,0 +1,483 @@
+<title>Carbon-Aware Job Scheduler</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Layout: one column. Input panel on top, a summary strip, two stacked timelines sharing one scale, then the schedule table. */
+:root{
+  --bg:#f2f5f7; --surface:#ffffff; --ink:#13202b; --muted:#53626f; --line:#d3dce2;
+  --sun:#a35f00; --sun-soft:rgba(222,148,0,.16); --sun-line:#d98e04;
+  --good:#17703f; --warn:#9a4a00; --focus:#0b63ce;
+  --btn-bg:#f3b43f; --btn-fg:#1d1500;
+  --j0:#1f6fd1; --j1:#7c4dcc; --j2:#0e8a8f; --j3:#c4467a; --j4:#3b8f3f; --j5:#c0612b; --j6:#5b6ee1; --j7:#7a8794;
+  --f-display:'Bricolage Grotesque','Avenir Next','Segoe UI',system-ui,sans-serif;
+  --f-body:'IBM Plex Sans','Segoe UI',system-ui,sans-serif;
+  --f-mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0d141b; --surface:#141d26; --ink:#e7edf2; --muted:#9aa8b5; --line:#27333f;
+    --sun:#f3b43f; --sun-soft:rgba(243,180,63,.14); --sun-line:#f3b43f;
+    --good:#4cc38a; --warn:#f0a35c; --focus:#6aa8ff;
+    --j0:#5b9bf0; --j1:#a584ea; --j2:#3cc0c5; --j3:#ee79a6; --j4:#69c06d; --j5:#ee9560; --j6:#8e9cf2; --j7:#9aa6b2;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0d141b; --surface:#141d26; --ink:#e7edf2; --muted:#9aa8b5; --line:#27333f;
+  --sun:#f3b43f; --sun-soft:rgba(243,180,63,.14); --sun-line:#f3b43f;
+  --good:#4cc38a; --warn:#f0a35c; --focus:#6aa8ff;
+  --j0:#5b9bf0; --j1:#a584ea; --j2:#3cc0c5; --j3:#ee79a6; --j4:#69c06d; --j5:#ee9560; --j6:#8e9cf2; --j7:#9aa6b2;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{
+  background:var(--bg); color:var(--ink); font-family:var(--f-body); font-size:15px; line-height:1.5;
+  padding-block:28px 56px; padding-left:max(16px,env(safe-area-inset-left,0px)); padding-right:max(16px,env(safe-area-inset-right,0px));
+}
+.wrap{max-width:1040px;margin:0 auto;display:flex;flex-direction:column;gap:28px}
+h1{font-family:var(--f-display);font-weight:700;font-size:clamp(28px,5vw,42px);line-height:1.08;margin:0;letter-spacing:-.01em;text-wrap:balance}
+h2{font-family:var(--f-display);font-weight:600;font-size:19px;margin:0;text-wrap:balance}
+.sub{margin:8px 0 0;color:var(--muted);max-width:60ch}
+.eyebrow{font-family:var(--f-mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--sun);margin:0 0 8px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px;display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:20px}
+@media (max-width:760px){.panel{grid-template-columns:minmax(0,1fr)}}
+label,.lbl{display:block;font-size:13px;font-weight:500;color:var(--muted);margin-bottom:6px}
+textarea,select{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:7px;padding:10px 12px}
+textarea{min-height:132px;resize:vertical;line-height:1.45}
+select{padding:8px 10px}
+textarea:focus-visible,select:focus-visible,button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.controls{display:flex;flex-direction:column;gap:14px;min-width:0}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.cap{display:flex;align-items:center;gap:12px}
+.cap input[type=range]{flex:1;min-width:0;accent-color:var(--sun-line)}
+.cap output{font-family:var(--f-mono);font-size:13px;min-width:5.5ch;text-align:right}
+.actions{display:flex;flex-wrap:wrap;align-items:center;gap:14px;grid-column:1/-1}
+button.primary{background:var(--btn-bg);color:var(--btn-fg);border:0;border-radius:7px;font:600 15px var(--f-body);padding:11px 20px;cursor:pointer}
+button.primary:hover{filter:brightness(1.05)}
+button.primary[disabled]{opacity:.6;cursor:progress}
+.toggle{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--ink);margin:0;font-weight:400}
+.toggle input{width:16px;height:16px;accent-color:var(--sun-line)}
+.note{font-size:13px;color:var(--muted);margin:0}
+.msg{font-size:13px;color:var(--warn);margin:0}
+.strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.strip>div{padding:16px 18px;border-left:1px solid var(--line);min-width:0}
+.strip>div:first-child{border-left:0}
+@media (max-width:760px){
+  .strip{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .strip>div:nth-child(3){border-left:0}
+  .strip>div:nth-child(n+3){border-top:1px solid var(--line)}
+}
+.k{font-size:12px;color:var(--muted);letter-spacing:.02em}
+.v{font-family:var(--f-display);font-weight:700;font-size:clamp(24px,4vw,34px);line-height:1.15;font-variant-numeric:tabular-nums;margin-top:2px}
+.v.hero{color:var(--sun)}
+.d{font-family:var(--f-mono);font-size:12px;color:var(--muted);margin-top:2px}
+.chartbox{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px 16px 10px;min-width:0}
+.charthead{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:6px 16px;margin-bottom:6px}
+.charthead .t{font-family:var(--f-display);font-weight:600;font-size:16px}
+.charthead .s{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+.chartbox svg{display:block;width:100%;height:auto;overflow:visible}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin:2px 0 0;font-size:12.5px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{width:12px;height:12px;border-radius:2px;display:inline-block}
+.sw.line{height:3px;width:16px;border-radius:2px;background:var(--sun-line)}
+.sw.band{background:var(--sun-soft);border:1px solid var(--sun-line)}
+.sw.dash{height:0;width:16px;border-top:2px dashed var(--muted);border-radius:0;background:none}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;min-width:760px;font-size:14px}
+th{font-size:12px;font-weight:500;color:var(--muted);text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:0}
+td.num,th.num{text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+td.win{font-family:var(--f-mono);font-size:13px}
+td .dot{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:8px;vertical-align:baseline}
+td.good{color:var(--good)}
+.explain{white-space:pre-wrap;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:0}
+details{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 18px}
+summary{cursor:pointer;font-weight:500}
+details ul{margin:10px 0 0;padding-left:20px;color:var(--muted)}
+details li{margin:4px 0}
+svg text{font-family:var(--f-mono);font-size:11px;fill:var(--muted)}
+svg .band{fill:var(--sun-soft)}
+svg .grid{stroke:var(--line);stroke-width:1}
+svg .capline{stroke:var(--muted);stroke-width:1.25;stroke-dasharray:5 4}
+svg .carbon{fill:none;stroke:var(--sun-line);stroke-width:2.5;stroke-linejoin:round}
+svg .tick{stroke:var(--line)}
+svg .daylbl{fill:var(--ink);font-weight:500}
+.b0{fill:var(--j0)}.b1{fill:var(--j1)}.b2{fill:var(--j2)}.b3{fill:var(--j3)}.b4{fill:var(--j4)}.b5{fill:var(--j5)}.b6{fill:var(--j6)}.b7{fill:var(--j7)}
+.bg0{background:var(--j0)}.bg1{background:var(--j1)}.bg2{background:var(--j2)}.bg3{background:var(--j3)}.bg4{background:var(--j4)}.bg5{background:var(--j5)}.bg6{background:var(--j6)}.bg7{background:var(--j7)}
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">Data center load shifting</p>
+    <h1>Carbon-Aware Job Scheduler</h1>
+    <p class="sub">Describe your compute jobs in plain English. The scheduler places each one in the sunniest, cleanest hours before its deadline and shows what that saves compared with running everything right away.</p>
+  </header>
+
+  <section class="panel" aria-label="Jobs and settings">
+    <div style="min-width:0">
+      <label for="jobs">Your jobs</label>
+      <textarea id="jobs" spellcheck="false">Retrain the recommendation model (8 GPUs, 6 hours, due in 40 hours), nightly database backup (1 hour, due tomorrow 6am), and batch video encoding (3 hours, due tomorrow noon)</textarea>
+    </div>
+    <div class="controls">
+      <div>
+        <label for="loc">Data center location</label>
+        <select id="loc">
+          <option value="la">Los Angeles, CA</option>
+          <option value="sf">San Francisco, CA</option>
+          <option value="phx">Phoenix, AZ</option>
+          <option value="aus">Austin, TX</option>
+        </select>
+      </div>
+      <div class="row2">
+        <div><label for="sky0">Sky today</label>
+          <select id="sky0"><option value="clear" selected>Clear</option><option value="partly">Partly cloudy</option><option value="overcast">Overcast</option></select></div>
+        <div><label for="sky1">Sky after midnight</label>
+          <select id="sky1"><option value="clear">Clear</option><option value="partly" selected>Partly cloudy</option><option value="overcast">Overcast</option></select></div>
+      </div>
+      <div>
+        <label for="cap">Site power cap</label>
+        <div class="cap"><input id="cap" type="range" min="2" max="40" value="10"><output id="capOut" for="cap">10 kW</output></div>
+      </div>
+    </div>
+    <div class="actions">
+      <button id="go" class="primary" type="button">Schedule my jobs</button>
+      <label class="toggle" id="claudeToggle" hidden><input id="useClaude" type="checkbox"> Read jobs and explain with Claude</label>
+      <p class="msg" id="msg" role="status"></p>
+    </div>
+  </section>
+
+  <section class="strip" id="strip" aria-label="Results summary"></section>
+
+  <section id="charts" style="display:flex;flex-direction:column;gap:16px"></section>
+
+  <section style="display:flex;flex-direction:column;gap:12px">
+    <h2>Schedule</h2>
+    <div class="tablewrap"><table id="tbl"></table></div>
+  </section>
+
+  <section id="explainSec" style="display:none;flex-direction:column;gap:12px">
+    <h2>Why these hours</h2>
+    <p class="explain" id="explain"></p>
+  </section>
+
+  <details>
+    <summary>How this works and what it assumes</summary>
+    <ul>
+      <li>Claude turns your free text into structured jobs (power draw, duration, deadline, whether the job can pause) and writes the summary. Without Claude, a simple rule-based reader handles common phrasing.</li>
+      <li>The placement is a transparent greedy algorithm: biggest jobs first, lowest-carbon window before the deadline, never above the site power cap. Jobs that can pause are split across the cleanest hours.</li>
+      <li>Sunlight is a modeled clear-sky curve for the chosen city (from latitude, date and time), reduced by the sky setting. This page cannot fetch a live weather forecast.</li>
+      <li>Grid carbon intensity is assumed to fall from 450 to 120 g CO₂/kWh as solar output rises. Prices are illustrative time-of-use rates of $0.55 (4-9pm), $0.26 (9am-4pm) and $0.32 per kWh otherwise. Replace these with sourced figures before presenting.</li>
+      <li>The baseline runs each job at the earliest hours it fits. Total energy is the same in both schedules; only the timing changes.</li>
+      <li>One simulated site. Real deployments would plug into a job queue such as Kubernetes or Slurm and a grid carbon API.</li>
+    </ul>
+  </details>
+</div>
+
+<script>
+const N = 48;
+const LOCS = {
+  la:  {name:'Los Angeles, CA',  lat:34.05, lon:-118.24, tz:'America/Los_Angeles'},
+  sf:  {name:'San Francisco, CA', lat:37.77, lon:-122.42, tz:'America/Los_Angeles'},
+  phx: {name:'Phoenix, AZ',      lat:33.45, lon:-112.07, tz:'America/Phoenix'},
+  aus: {name:'Austin, TX',       lat:30.27, lon:-97.74,  tz:'America/Chicago'}
+};
+const SKY = {clear:1, partly:0.62, overcast:0.22};
+const CI_MAX = 450, CI_MIN = 120, P_PEAK = 0.55, P_OFF = 0.32, P_SOLAR = 0.26, SOLAR_THR = 0.35;
+const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+/* ---------- time and sun ---------- */
+function tzParts(ms, tz){
+  const f = new Intl.DateTimeFormat('en-US',{timeZone:tz,weekday:'short',year:'numeric',month:'numeric',day:'numeric',hour:'numeric',hourCycle:'h23'});
+  const o = {}; f.formatToParts(new Date(ms)).forEach(p => { o[p.type] = p.value; });
+  return {wd:o.weekday, y:+o.year, m:+o.month, d:+o.day, h:(+o.hour)%24};
+}
+function makeHours(loc, nowMs){
+  const start = Math.floor(nowMs/3600000)*3600000;
+  const p0 = tzParts(start, loc.tz);
+  const day0 = Date.UTC(p0.y,p0.m-1,p0.d);
+  const out = [];
+  for(let i=0;i<=N;i++){
+    const ms = start + i*3600000;
+    const p = tzParts(ms, loc.tz);
+    const dayUtc = Date.UTC(p.y,p.m-1,p.d);
+    const off = Math.round((Date.UTC(p.y,p.m-1,p.d,p.h) - ms)/3600000);
+    out.push({i, ms, wd:p.wd, h:p.h, off,
+      doy:Math.round((dayUtc - Date.UTC(p.y,0,0))/86400000),
+      dayIdx:Math.round((dayUtc-day0)/86400000)});
+  }
+  return out;
+}
+function ghi(hr, loc, skyFactor){
+  const rad = Math.PI/180;
+  const dec = 23.44*rad*Math.sin(2*Math.PI*(284+hr.doy)/365);
+  const solarTime = hr.h + 0.5 + (loc.lon - 15*hr.off)/15;
+  const ha = (solarTime-12)*15*rad;
+  const lat = loc.lat*rad;
+  const s = Math.sin(lat)*Math.sin(dec) + Math.cos(lat)*Math.cos(dec)*Math.cos(ha);
+  return s <= 0 ? 0 : 1050*Math.pow(s,1.15)*skyFactor;
+}
+function makeCurves(hours, loc, sky0, sky1){
+  const c = [];
+  for(let i=0;i<N;i++){
+    const hr = hours[i];
+    const irr = ghi(hr, loc, SKY[hr.dayIdx===0 ? sky0 : sky1]);
+    const solar = Math.min(1, Math.max(0, irr/900));
+    const price = (hr.h>=16 && hr.h<21) ? P_PEAK : (hr.h>=9 && hr.h<16) ? P_SOLAR : P_OFF;
+    c.push({irr, solar, carbon: CI_MAX-(CI_MAX-CI_MIN)*solar, price});
+  }
+  return c;
+}
+function h12(h){ const a = h<12?'am':'pm'; const x = h%12===0?12:h%12; return x+a; }
+function lbl(hours, i){ const hr = hours[Math.min(i,N)]; return hr.wd+' '+h12(hr.h); }
+
+/* ---------- parsing ---------- */
+const CLAUDE_SYSTEM = 'You convert plain-English descriptions of compute jobs into JSON. Return ONLY a JSON array. Each element has: name (string), power_kw (number, average electrical draw), duration_h (integer hours, at least 1), deadline_hours_from_now (integer, hours from the current time by which the job must FINISH), splittable (boolean, true if the job can be paused and resumed, such as training with checkpoints or batch work). Typical draws if unspecified: one GPU 0.7 kW, an 8-GPU node 6 kW, backup or ETL 1 kW, video encoding 2 kW. If no deadline is given use 24. Never exceed 47 for deadline_hours_from_now.';
+
+function jobsFromJson(items, n){
+  if(!Array.isArray(items) || !items.length) throw new Error('no jobs');
+  return items.slice(0,8).map(it => ({
+    name:String(it.name||'Job').slice(0,70),
+    power:Math.max(0.1, Number(it.power_kw)||1),
+    dur:Math.max(1, Math.round(Number(it.duration_h)||1)),
+    deadline:Math.max(1, Math.min(n, Math.round(Number(it.deadline_hours_from_now)||24))),
+    split:!!it.splittable, hours:[]
+  })).map(j => { j.deadline = Math.max(j.deadline, j.dur); return j; });
+}
+function deadlineFromText(low, hours){
+  let dayTarget = null;
+  if(/tonight|today/.test(low)) dayTarget = {day:0};
+  else if(/tomorrow/.test(low)) dayTarget = {day:1};
+  else { for(const d of DAYS){ if(new RegExp('\\b'+d.toLowerCase()+'(?:day|sday|nesday|rsday|urday)?\\b').test(low)){ dayTarget = {wd:d}; break; } } }
+  let hour = null;
+  if(/\bnoon\b/.test(low)) hour = 12;
+  else if(/\bmidnight\b/.test(low)) hour = 24;
+  else {
+    const m = low.match(/\b(\d{1,2})(?::\d\d)?\s*(am|pm)\b/);
+    if(m){ let x = +m[1]%12; if(m[2]==='pm') x += 12; hour = x; }
+  }
+  if(!dayTarget && hour===null) return null;
+  const hh = hour===null ? (dayTarget && dayTarget.wd ? 17 : 12) : hour;
+  for(let i=1;i<=N;i++){
+    const hr = hours[i];
+    const okDay = !dayTarget || (dayTarget.wd ? hr.wd===dayTarget.wd : hr.dayIdx===dayTarget.day);
+    if(okDay && hr.h===hh%24 && (hh!==24 || hr.dayIdx>=0)) return i;
+  }
+  return N;
+}
+function parseFallback(text, hours){
+  const parts = text.split(/[\n;]|,(?![^()]*\))| and /i).map(s => s.trim()).filter(Boolean);
+  return parts.slice(0,8).map(p => {
+    const low = p.toLowerCase();
+    let dur = 2;
+    const m = low.match(/(\d+(?:\.\d+)?)\s*(?:gpu[- ]?)?(?:hours?|hrs?|h)\b/);
+    if(m) dur = Math.max(1, Math.round(parseFloat(m[1])));
+    let power = 0.7;
+    const g = low.match(/(\d+)\s*gpus?/);
+    if(g) power = 0.7*parseInt(g[1],10);
+    else if(/train|fine-?tun/.test(low)) power = 4;
+    else if(/encod|video|render/.test(low)) power = 2;
+    else if(/backup|etl|index/.test(low)) power = 1;
+    let deadline = 24;
+    const inH = low.match(/in (\d+)\s*hours?/);
+    if(inH) deadline = parseInt(inH[1],10);
+    else { const d = deadlineFromText(low, hours); if(d!==null) deadline = d; }
+    deadline = Math.max(dur, Math.min(N, deadline));
+    return {name:p.replace(/\s+/g,' ').slice(0,70), power, dur, deadline, split:/train|batch|encod|render|index/.test(low), hours:[]};
+  });
+}
+
+/* ---------- scheduling ---------- */
+function schedule(jobs, curves, cap, mode){
+  const load = new Array(N).fill(0);
+  const warnings = [];
+  const free = (h,p) => load[h]+p <= cap+1e-9;
+  const order = jobs.map((j,idx) => ({j,idx})).sort((a,b) => (b.j.power*b.j.dur)-(a.j.power*a.j.dur) || a.idx-b.idx);
+  const placed = new Array(jobs.length);
+  for(const {j,idx} of order){
+    const q = Object.assign({}, j, {deadline:Math.min(j.deadline,N), hours:[]});
+    let hrs = [];
+    if(mode==='naive'){
+      for(let h=0;h<q.deadline && hrs.length<q.dur;h++){
+        if(free(h,q.power)) hrs.push(h); else if(hrs.length) hrs = [];
+      }
+      if(hrs.length<q.dur) hrs = [];
+    } else if(q.split){
+      const ranked = [];
+      for(let h=0;h<q.deadline;h++) ranked.push(h);
+      ranked.sort((a,b) => curves[a].carbon-curves[b].carbon || a-b);
+      hrs = ranked.filter(h => free(h,q.power)).slice(0,q.dur);
+      if(hrs.length<q.dur) hrs = [];
+      hrs.sort((a,b) => a-b);
+    } else {
+      let best = null, bestCost = Infinity;
+      for(let s=0;s<=q.deadline-q.dur;s++){
+        let ok = true, cost = 0;
+        for(let h=s;h<s+q.dur;h++){ if(!free(h,q.power)){ ok=false; break; } cost += curves[h].carbon; }
+        if(ok && cost < bestCost-1e-9){ best = s; bestCost = cost; }
+      }
+      if(best!==null) for(let h=best;h<best+q.dur;h++) hrs.push(h);
+    }
+    if(!hrs.length) warnings.push('"'+j.name+'" does not fit before its deadline under the '+cap+' kW cap.');
+    hrs.forEach(h => { load[h] += q.power; });
+    q.hours = hrs;
+    placed[idx] = q;
+  }
+  return {jobs:placed, load, warnings};
+}
+function metricsOf(jobs, curves){
+  let kwh=0, co2=0, cost=0, solarKwh=0;
+  for(const j of jobs) for(const h of j.hours){
+    kwh += j.power; co2 += j.power*curves[h].carbon; cost += j.power*curves[h].price;
+    if(curves[h].solar>=SOLAR_THR) solarKwh += j.power;
+  }
+  return {kwh, co2:co2/1000, cost, solarKwh, share:kwh?solarKwh/kwh:0};
+}
+function jobCo2(j, curves){ return j.hours.reduce((s,h) => s+j.power*curves[h].carbon, 0)/1000; }
+
+/* ---------- drawing ---------- */
+function esc(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function chartSvg(W, jobs, curves, hours, cap, ymax){
+  const H = W<520 ? 250 : 300, L=40, R=44, T=10, B=34;
+  const pw = W-L-R, ph = H-T-B, bw = pw/N;
+  const y = v => T + ph - (v/ymax)*ph;
+  const cy = v => T + ph - ((v-100)/(460-100))*ph;
+  let s = '<svg viewBox="0 0 '+W+' '+H+'" width="'+W+'" height="'+H+'" role="img" aria-label="Job load by hour against grid carbon intensity">';
+  for(let i=0;i<N;i++) if(curves[i].solar>=SOLAR_THR) s += '<rect class="band" x="'+(L+i*bw).toFixed(1)+'" y="'+T+'" width="'+bw.toFixed(1)+'" height="'+ph+'"/>';
+  [0,0.5,1].forEach(f => {
+    const v = ymax*f/1.1*1.0; const yy = y(ymax*f);
+    s += '<line class="grid" x1="'+L+'" x2="'+(W-R)+'" y1="'+yy.toFixed(1)+'" y2="'+yy.toFixed(1)+'"/>';
+    if(f>0) s += '<text x="'+(L-6)+'" y="'+(yy+4).toFixed(1)+'" text-anchor="end">'+(ymax*f).toFixed(0)+'</text>';
+  });
+  s += '<text x="'+(L-6)+'" y="'+(y(0)+4)+'" text-anchor="end">0</text>';
+  const base = new Array(N).fill(0);
+  jobs.forEach((j,k) => {
+    j.hours.forEach(h => {
+      const hgt = (j.power/ymax)*ph;
+      const y0 = y(base[h]) - hgt;
+      s += '<rect class="b'+(k%8)+'" x="'+(L+h*bw+0.5).toFixed(1)+'" y="'+y0.toFixed(1)+'" width="'+Math.max(1,bw-1).toFixed(1)+'" height="'+hgt.toFixed(1)+'"><title>'+esc(j.name)+' | '+j.power.toFixed(1)+' kW | '+lbl(hours,h)+'</title></rect>';
+      base[h] += j.power;
+    });
+  });
+  s += '<line class="capline" x1="'+L+'" x2="'+(W-R)+'" y1="'+y(cap).toFixed(1)+'" y2="'+y(cap).toFixed(1)+'"/>';
+  s += '<text x="'+(L+4)+'" y="'+(y(cap)-5).toFixed(1)+'">cap '+cap+' kW</text>';
+  let d = '';
+  for(let i=0;i<N;i++) d += (i?'L':'M')+(L+i*bw+bw/2).toFixed(1)+' '+cy(curves[i].carbon).toFixed(1)+' ';
+  s += '<path class="carbon" d="'+d+'"/>';
+  [120,290,450].forEach(v => { s += '<text x="'+(W-R+6)+'" y="'+(cy(v)+4).toFixed(1)+'">'+v+'</text>'; });
+  for(let i=0;i<N;i++){
+    const hr = hours[i];
+    if(hr.h%6===0){
+      const x = L+i*bw+bw/2;
+      s += '<line class="tick" x1="'+x.toFixed(1)+'" x2="'+x.toFixed(1)+'" y1="'+(T+ph)+'" y2="'+(T+ph+4)+'"/>';
+      if(hr.h===0) s += '<text class="daylbl" x="'+x.toFixed(1)+'" y="'+(T+ph+26)+'" text-anchor="middle">'+hr.wd+'</text>';
+      s += '<text x="'+x.toFixed(1)+'" y="'+(T+ph+15)+'" text-anchor="middle">'+h12(hr.h)+'</text>';
+    }
+  }
+  s += '<text x="'+(L-6)+'" y="'+(T-1)+'" text-anchor="end"> kW</text>';
+  s += '<text x="'+(W-R+6)+'" y="'+(T-1)+'">g/kWh</text>';
+  return s+'</svg>';
+}
+function windows(j, hours){
+  if(!j.hours.length) return 'Does not fit';
+  const runs = []; let a = j.hours[0], b = a;
+  for(let k=1;k<j.hours.length;k++){ if(j.hours[k]===b+1) b++; else { runs.push([a,b]); a=j.hours[k]; b=a; } }
+  runs.push([a,b]);
+  return runs.map(([s,e]) => {
+    const st = hours[s], en = hours[e+1];
+    return st.wd+' '+h12(st.h)+' to '+(en.wd!==st.wd ? en.wd+' ' : '')+h12(en.h);
+  }).join(', ');
+}
+
+/* ---------- page ---------- */
+let sampleFn = null, last = null;
+function $(id){ return document.getElementById(id); }
+
+function render(){
+  if(!last) return;
+  const {opt, nai, mOpt, mNai, curves, hours, cap, warnings, locName} = last;
+  const dCo2 = mNai.co2 - mOpt.co2, pct = mNai.co2 ? 100*dCo2/mNai.co2 : 0;
+  $('strip').innerHTML =
+    '<div><div class="k">CO₂ avoided</div><div class="v hero">'+dCo2.toFixed(1)+' kg</div><div class="d">'+pct.toFixed(0)+'% less than run-now</div></div>'+
+    '<div><div class="k">Cost saved</div><div class="v">$'+(mNai.cost-mOpt.cost).toFixed(2)+'</div><div class="d">$'+mNai.cost.toFixed(2)+' to $'+mOpt.cost.toFixed(2)+'</div></div>'+
+    '<div><div class="k">Energy in solar hours</div><div class="v">'+(mOpt.share*100).toFixed(0)+'%</div><div class="d">was '+(mNai.share*100).toFixed(0)+'%</div></div>'+
+    '<div><div class="k">Total energy</div><div class="v">'+mOpt.kwh.toFixed(0)+' kWh</div><div class="d">same either way</div></div>';
+  const maxLoad = Math.max(...last.loadO, ...last.loadN, 0.1);
+  const ymax = Math.max(cap, maxLoad)*1.1;
+  const W = Math.max(300, Math.floor($('charts').clientWidth - 34));
+  const legendJobs = opt.map((j,k) => '<span><i class="sw bg'+(k%8)+'"></i>'+esc(j.name.length>34 ? j.name.slice(0,33)+'…' : j.name)+'</span>').join('');
+  const legend = '<div class="legend">'+legendJobs+'<span><i class="sw line"></i>Grid carbon (g/kWh, right axis)</span><span><i class="sw band"></i>Solar hours</span><span><i class="sw dash"></i>Site cap</span></div>';
+  const box = (title, sub, jobs, load) => '<div class="chartbox"><div class="charthead"><span class="t">'+title+'</span><span class="s">'+sub+'</span></div>'+chartSvg(W, jobs, curves, hours, cap, ymax)+'</div>';
+  $('charts').innerHTML =
+    box('Run immediately', mNai.co2.toFixed(1)+' kg CO₂ · '+(mNai.share*100).toFixed(0)+'% on solar hours', nai) +
+    box('Carbon-aware schedule', mOpt.co2.toFixed(1)+' kg CO₂ · '+(mOpt.share*100).toFixed(0)+'% on solar hours', opt) +
+    '<div class="chartbox" style="padding:12px 16px">'+legend+'<p class="note" style="margin-top:8px">Both charts use the same scale. Hours shown in '+esc(locName)+' time.</p></div>';
+
+  let rows = '<thead><tr><th>Job</th><th class="num">kW</th><th class="num">Hours</th><th>Finish by</th><th>Can pause</th><th>Scheduled</th><th class="num">CO₂ saved</th></tr></thead><tbody>';
+  opt.forEach((j,k) => {
+    const saved = jobCo2(nai[k], curves) - jobCo2(j, curves);
+    rows += '<tr><td><span class="dot bg'+(k%8)+'"></span>'+esc(j.name)+'</td><td class="num">'+j.power.toFixed(1)+'</td><td class="num">'+j.dur+'</td><td>'+lbl(hours, j.deadline)+'</td><td>'+(j.split?'Yes':'No')+'</td><td class="win">'+windows(j,hours)+'</td><td class="num good">'+(j.hours.length ? saved.toFixed(2)+' kg' : '—')+'</td></tr>';
+  });
+  $('tbl').innerHTML = rows+'</tbody>';
+}
+
+async function run(){
+  const btn = $('go'), msg = $('msg');
+  msg.textContent = '';
+  btn.disabled = true;
+  try{
+    const loc = LOCS[$('loc').value];
+    const hours = makeHours(loc, Date.now());
+    const curves = makeCurves(hours, loc, $('sky0').value, $('sky1').value);
+    const cap = +$('cap').value;
+    const text = $('jobs').value.trim();
+    let jobs = null, usedClaude = false;
+    if(sampleFn && $('useClaude').checked){
+      try{
+        msg.textContent = 'Claude is reading your jobs…';
+        const now = lbl(hours,0)+' ('+loc.name+')';
+        const arr = await sampleFn.json(CLAUDE_SYSTEM+'\n\nCurrent local time: '+now+'\n\nJobs:\n'+text, {modelTier:'quick'});
+        jobs = jobsFromJson(arr, N); usedClaude = true; msg.textContent = '';
+      }catch(e){
+        msg.textContent = 'Claude could not read the jobs ('+((e&&e.code)||'error')+'), so the built-in reader was used.';
+      }
+    }
+    if(!jobs) jobs = parseFallback(text, hours);
+    if(!jobs.length){ msg.textContent = 'No jobs found in that text.'; return; }
+    const o = schedule(jobs, curves, cap, 'optimized');
+    const n = schedule(jobs, curves, cap, 'naive');
+    last = {opt:o.jobs, nai:n.jobs, loadO:o.load, loadN:n.load, curves, hours, cap, locName:loc.name,
+      mOpt:metricsOf(o.jobs,curves), mNai:metricsOf(n.jobs,curves), warnings:o.warnings.concat(n.warnings)};
+    render();
+    if(last.warnings.length && !msg.textContent) msg.textContent = Array.from(new Set(last.warnings)).join(' ');
+    const sec = $('explainSec');
+    sec.style.display = 'none';
+    if(usedClaude && sampleFn){
+      try{
+        sec.style.display = 'flex'; $('explain').textContent = 'Writing the summary…';
+        const lines = last.opt.map(j => '- '+j.name+': '+j.power.toFixed(1)+' kW, '+(j.hours.length ? windows(j,hours) : 'could not be scheduled')+', finish by '+lbl(hours,j.deadline)).join('\n');
+        await sampleFn('In 3 to 5 short bullet points, explain to a non-expert why these compute jobs were placed at these hours. The grid is cleanest and cheapest when solar output is high around midday, and the evening peak is the dirtiest and most expensive. Mention any job that could not move and why. Plain text, no markdown headings.\n\n'+lines,
+          {modelTier:'quick', cache:false, onText:({text}) => { $('explain').textContent = text; }});
+      }catch(e){ sec.style.display = 'none'; }
+    }
+  } finally { btn.disabled = false; }
+}
+
+function init(){
+  $('cap').addEventListener('input', () => { $('capOut').textContent = $('cap').value+' kW'; });
+  $('go').addEventListener('click', run);
+  ['loc','sky0','sky1'].forEach(id => $(id).addEventListener('change', run));
+  $('cap').addEventListener('change', run);
+  let t = null;
+  new ResizeObserver(() => { clearTimeout(t); t = setTimeout(render, 120); }).observe($('charts'));
+  run();
+  try{
+    if(window.claude && window.claude.use){
+      window.claude.use('sample').then(s => { if(s){ sampleFn = s; $('claudeToggle').hidden = false; } }).catch(() => {});
+    }
+  }catch(e){}
+}
+if(typeof document !== 'undefined') init();
+</script>
