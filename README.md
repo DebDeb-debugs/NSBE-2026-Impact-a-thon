@@ -6,7 +6,7 @@ Built for the 2026 NSBE FRC AI Impact-a-thon (theme: Engineering a Sustainable T
 
 ## Two versions
 
-| | Streamlit app (`app.py`) | Static web page (`web/index.html`) |
+| | Streamlit app (`app.py`) | Static web page (`docs/index.html`) |
 |---|---|---|
 | Solar data | Live forecast from Open-Meteo, with an offline fallback | Modeled clear-sky curve plus a sky-condition setting |
 | Claude | Optional, with an Anthropic API key | Optional, where Claude is available |
